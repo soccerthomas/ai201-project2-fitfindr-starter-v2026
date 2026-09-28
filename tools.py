@@ -98,48 +98,68 @@ def search_listings(
 # ── Tool 2: suggest_outfit ────────────────────────────────────────────────────
 
 def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
-    """
-    Given a thrifted item and the user's wardrobe, suggest one or two outfits.
+    items = wardrobe.get("items", [])
 
-    This one calls the model, through `generate()`. You don't need to think
-    about rate limits — the adapter handles pacing for you.
+    item_description = (
+        f"{new_item['title']} ({new_item['category']}, "
+        f"{', '.join(new_item['colors'])}, size {new_item['size']}, "
+        f"style: {', '.join(new_item['style_tags'])})"
+    )
 
-    Args:
-        new_item: a listing dict — the item the user is considering.
-        wardrobe: a wardrobe dict with an 'items' key holding a list of items.
-                  It may be empty. Handle that.
+    if not items:
+        prompt = (
+            f"Someone is considering buying this secondhand item:\n"
+            f"{item_description}\n\n"
+            f"They don't have any wardrobe items on file yet. Suggest general "
+            f"styling ideas for this item — what kinds of pieces would pair "
+            f"well with it, in terms of color, fit, and vibe."
+        )
+    else:
+        wardrobe_lines = "\n".join(
+            f"- {i['name']} ({i['category']}, {', '.join(i['colors'])})"
+            for i in items
+        )
+        prompt = (
+            f"Someone is considering buying this secondhand item:\n"
+            f"{item_description}\n\n"
+            f"Here is their current wardrobe:\n{wardrobe_lines}\n\n"
+            f"Suggest one or two specific outfits that combine the new item "
+            f"with pieces they already own. Name the wardrobe pieces directly."
+        )
 
-    Returns:
-        A non-empty string with outfit suggestions.
-        With an empty wardrobe, return general styling advice rather than
-        raising or returning "".
+    system = (
+        "You are a thrifting and styling assistant. Give concrete, concise "
+        "outfit suggestions in a friendly tone. Keep it to a few sentences."
+    )
 
-    Test it from a terminal before you move on:
-        python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[0], get_example_wardrobe()))"
-    """
-    # TODO: replace this with your implementation
-    return ""
+    return generate(prompt, system=system)
 
 
 # ── Tool 3: create_fit_card ───────────────────────────────────────────────────
 
 def create_fit_card(outfit: str, new_item: dict) -> str:
-    """
-    Write a short caption someone would actually post about the find.
+    if not outfit or not outfit.strip():
+        return (
+            f"{new_item['title']} — ${new_item['price']:.0f} on "
+            f"{new_item['platform']}. No outfit suggestion available yet."
+        )
 
-    This calls the model too.
+    prompt = (
+        f"Write a short caption (2-4 sentences) someone would actually post "
+        f"when reselling or sharing this thrifted find:\n\n"
+        f"Item: {new_item['title']}\n"
+        f"Price: ${new_item['price']:.0f}\n"
+        f"Platform: {new_item['platform']}\n"
+        f"Condition: {new_item['condition']}\n\n"
+        f"Outfit idea to reference: {outfit}\n\n"
+        f"Mention the item, its price, and its platform once each. Write it "
+        f"like a real social post, not a product listing — specific about "
+        f"the vibe, not generic."
+    )
 
-    Args:
-        outfit:   the outfit suggestion string from suggest_outfit().
-        new_item: the listing dict for the item.
+    system = (
+        "You write short, casual social captions for secondhand fashion "
+        "finds. Sound like a real person posting, not an ad."
+    )
 
-    Returns:
-        A two-to-four sentence caption.
-        If `outfit` is empty or whitespace, return a descriptive message rather
-        than raising.
-
-    Test it from a terminal before you move on:
-        python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('jeans and white sneakers', load_listings()[0]))"
-    """
-    # TODO: replace this with your implementation
-    return ""
+    return generate(prompt, system=system)
