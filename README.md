@@ -40,7 +40,9 @@
 ## What This Does
 
 <!-- Three or four sentences: what a user asks for, and what they get back. -->
-
+## Notes — Milestone 1
+Listing fields: id, title, description, category, style_tags, size, condition, price, colors, brand, platform
+Wardrobe fields: id, name, category, colors, style_tags, notes
 
 
 ---
