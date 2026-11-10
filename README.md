@@ -334,3 +334,30 @@ full. -->
 ---
 
 📖 **How to run this project: [RUNNING.md](RUNNING.md)**
+
+---
+
+# Capstone (Unit 9)
+
+## What This Extends
+
+FitFindr, the three-tool thrift agent (search_listings over MCP, then
+suggest_outfit, then create_fit_card). New this unit: the suggest_outfit
+model call has a hard timeout and one retry, and every run writes a
+structured log record to logs/runs.jsonl.
+
+## The Shape
+
+**B — Harden against failure.** Before this unit, a model timeout or outage
+during suggest_outfit escaped run_agent as an exception: the command ended
+with an error line and no result, even though search had already found an
+item. Now each model request has a 20 second ceiling (FITFINDR_TIMEOUT_MS),
+suggest_outfit is retried once after a failure, and if the retry also fails
+the run stops cleanly with a message naming the item it found and what went
+wrong. Failures can be triggered on purpose: FITFINDR_FAULT=flaky fails the
+first model call of a run, FITFINDR_FAULT=down fails every one.
+
+**Out of scope:** create_fit_card's model call is not retried (one tool call,
+not two). Transient errors and permanent ones like a bad key are not told
+apart, so both get the same single retry. No hosting (Path B). No changes to
+search scoring or prompts.
