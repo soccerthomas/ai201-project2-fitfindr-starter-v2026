@@ -48,3 +48,62 @@ below the requested price limit in 5 of 5 runs.
 **Why this target:** I chose 5 of 5 because price is structured listing data,
 so the agent can directly compare it with the user's maximum price. This
 should not depend on model wording.
+---
+
+## Capstone criteria (Unit 9)
+
+All five are scored over 3 trials. A trial is one run of `python capstone_trials.py`
+with the cache off. A criterion is MET only if its target holds in all 3 trials.
+C1–C3 are about this unit's extension; C2 is the bad path.
+
+### C1. A single model failure is recovered, not shown to the user
+
+With `FITFINDR_FAULT=flaky` (the first model call of the run fails), each of 5 runs
+on matching queries ends with a fit card, no error, and `outfit_attempts` = 2.
+**Target: 5 of 5 per trial.**
+
+**Why:** the simulated fault fails exactly once and the retry is plain code, so one
+miss means the retry path is broken or something after it fails. Anything under
+5/5 lets a user see an error the extension exists to absorb.
+
+### C2. A model outage ends the run cleanly, fast, and names what was found
+
+With `FITFINDR_FAULT=down`, each of 5 runs on matching queries returns without an
+exception escaping `run_agent`, with an error message containing the found item's
+title and price, `outfit_attempts` = 2, in under 5 seconds wall time.
+**Target: 5 of 5 per trial.**
+
+**Why:** when the model is down the user should still learn what search found and
+that the problem is the model, not their query. Under 5 s because no real model
+call happens. The only costs are MCP startup (about 1.5 s in M2) and one 1 s retry
+wait, so anything slower means the run is waiting on something it shouldn't.
+
+### C3. Every run leaves exactly one log line, and it tells the truth
+
+For a batch of 7 runs (3 normal, 2 impossible queries, 2 with `FITFINDR_FAULT=down`),
+`logs/runs.jsonl` gains exactly one line per run, and each line's `outcome` matches
+what the caller actually got (fit card = `ok`, empty search = `no_results`, handled
+stop = `model_error`, exception = `crash`). **Target: 7 of 7 per trial.**
+
+**Why:** the log is the only way to diagnose a run afterwards. One missing or
+mislabeled line means a failure can disappear, which defeats the instrumentation.
+
+### C4. Normal runs stay fast enough to use
+
+Of 5 normal runs (no fault), at least 4 finish with a fit card in under 10 seconds,
+by the logged `duration_s`. **Target: at least 4 of 5 per trial.**
+
+**Why:** the measured average in M3 was 8.33 s including two rate-limit pauses, so
+10 s leaves a little room. 4 of 5 lets one run land on a rate-limit pause (15
+requests/minute, 2 per run) without calling it a miss. Two slow runs means waiting
+has become the normal experience.
+
+### C5. The original happy path still works
+
+Of 5 normal runs (no fault, five different matching queries), all 5 end with
+`outcome` = `ok` and a non-empty fit card. **Target: 5 of 5 per trial.**
+
+**Why:** this is the system as it worked before the extension, and the extension
+must not break it. It is not a free pass. A real `503 UNAVAILABLE` already crashed
+one run in M3, and the `create_fit_card` call is not retried, so this can fail on
+a bad day. C4 and C5 are scored on the same 5 normal runs.
