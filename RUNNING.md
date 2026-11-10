@@ -246,3 +246,46 @@ history is what shows your criteria existed before your results did.
 units.
 
 `results/` is deliberately **not** in `.gitignore`.
+
+---
+
+## Capstone run path (Unit 9) — Path B, local with logs
+
+**Start command** (from the repo root, venv active):
+
+```bash
+python app.py ask 'denim jacket under $50'
+```
+
+**Environment**
+- Python 3.13 (3.11–3.13 supported; NOT 3.14)
+- Dependencies: `pip install -r requirements.txt` (bounded ranges). Exact versions
+  this was tested with are in `requirements.lock.txt` (`pip install -r requirements.lock.txt`).
+- `.env` with `GEMINI_API_KEY` (copy `.env.example`). Model: `gemini-3.5-flash-lite`,
+  hosted by Google, so no local model files (0 MB on disk).
+
+**From a clean checkout**
+
+```bash
+git clone <this repo> && cd <repo>
+python3.13 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env    # paste your key
+python app.py ask 'denim jacket under $50'
+```
+
+**Every run appends one JSON line to `logs/runs.jsonl`** (committed as the run record).
+
+**Triggering the bad path on purpose**
+
+| Variable | Effect |
+|---|---|
+| `FITFINDR_FAULT=flaky` | first model call of the run fails with a simulated timeout (retry should recover) |
+| `FITFINDR_FAULT=down` | every model call fails (run should stop cleanly with a message) |
+| `FITFINDR_TIMEOUT_MS=20000` | ceiling on one model request, in ms (default 20000) |
+
+Example: `FITFINDR_FAULT=down python app.py ask 'denim jacket under $50'`
+
+**Measuring cost:** `python measure_cost.py` runs the agent with the cache off until
+10 runs succeed and prints average tokens, seconds and dollars per run, read back
+from the log.

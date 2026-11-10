@@ -361,3 +361,71 @@ first model call of a run, FITFINDR_FAULT=down fails every one.
 not two). Transient errors and permanent ones like a bad key are not told
 apart, so both get the same single retry. No hosting (Path B). No changes to
 search scoring or prompts.
+
+
+## Running It
+
+Path B, local with logs. The start command, environment, clean-checkout steps and
+fault switches are in [RUNNING.md](RUNNING.md) under "Capstone run path".
+
+## Instrumentation
+
+`agent.run_agent()` appends one JSON record per run to `logs/runs.jsonl`, including
+runs that error or crash (it logs in a `finally`). Fields:
+
+| Field | Meaning |
+|---|---|
+| `ts` | UTC timestamp at the end of the run |
+| `query` | what came in |
+| `wardrobe_items` | how many wardrobe items the run had |
+| `outcome` | `ok`, `no_results`, `model_error` (handled stop) or `crash` (exception escaped) |
+| `selected_item`, `selected_price` | what search picked |
+| `outfit_attempts` | how many tries suggest_outfit took (0 = never reached) |
+| `fit_card_words` | length of the output |
+| `error` | the message the user saw, or the exception text for a crash |
+| `duration_s` | wall time for the whole run, including MCP startup and rate-limit waits |
+| `model_calls`, `prompt_tokens`, `output_tokens` | real model calls and tokens (cache hits and simulated faults cost 0) |
+| `cache_enabled`, `fault` | the conditions the run happened under |
+
+All 15 entries recorded so far, unedited. Note the `crash` line: a real
+`503 UNAVAILABLE` from the model during `create_fit_card`, the call this unit
+did not harden.
+
+{"ts": "2026-11-10T08:06:08+00:00", "query": "denim jacket under $50", "wardrobe_items": 10, "outcome": "ok", "selected_item": "Denim Jacket \u2014 Light Wash, Cropped", "selected_price": 42.0, "outfit_attempts": 1, "fit_card_words": 56, "error": null, "duration_s": 8.103, "model_calls": 2, "prompt_tokens": 439, "output_tokens": 172, "cache_enabled": false, "fault": null}
+{"ts": "2026-11-10T08:06:21+00:00", "query": "denim jacket under $50", "wardrobe_items": 10, "outcome": "ok", "selected_item": "Denim Jacket \u2014 Light Wash, Cropped", "selected_price": 42.0, "outfit_attempts": 2, "fit_card_words": 51, "error": null, "duration_s": 12.467, "model_calls": 2, "prompt_tokens": 445, "output_tokens": 172, "cache_enabled": false, "fault": "flaky"}
+{"ts": "2026-11-10T08:06:23+00:00", "query": "denim jacket under $50", "wardrobe_items": 10, "outcome": "model_error", "selected_item": "Denim Jacket \u2014 Light Wash, Cropped", "selected_price": 42.0, "outfit_attempts": 2, "fit_card_words": 0, "error": "Found Denim Jacket \u2014 Light Wash, Cropped ($42.0 on poshmark), but couldn't get an outfit suggestion after 2 tries. Couldn't reach the model. Check your internet connection and try again.", "duration_s": 1.696, "model_calls": 0, "prompt_tokens": 0, "output_tokens": 0, "cache_enabled": false, "fault": "down"}
+{"ts": "2026-11-10T08:07:40+00:00", "query": "vintage graphic tee under $30", "wardrobe_items": 10, "outcome": "ok", "selected_item": "Y2K Baby Tee \u2014 Butterfly Print", "selected_price": 18.0, "outfit_attempts": 1, "fit_card_words": 55, "error": null, "duration_s": 9.452, "model_calls": 2, "prompt_tokens": 446, "output_tokens": 168, "cache_enabled": false, "fault": null}
+{"ts": "2026-11-10T08:07:50+00:00", "query": "90s track jacket in size M", "wardrobe_items": 10, "outcome": "crash", "selected_item": null, "selected_price": null, "outfit_attempts": 0, "fit_card_words": 0, "error": "ModelUnavailable: Couldn't reach the model: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}", "duration_s": 10.002, "model_calls": 2, "prompt_tokens": 228, "output_tokens": 80, "cache_enabled": false, "fault": null}
+{"ts": "2026-11-10T08:08:33+00:00", "query": "vintage graphic tee under $30", "wardrobe_items": 10, "outcome": "ok", "selected_item": "Y2K Baby Tee \u2014 Butterfly Print", "selected_price": 18.0, "outfit_attempts": 1, "fit_card_words": 47, "error": null, "duration_s": 9.181, "model_calls": 2, "prompt_tokens": 450, "output_tokens": 157, "cache_enabled": false, "fault": null}
+{"ts": "2026-11-10T08:08:36+00:00", "query": "90s track jacket in size M", "wardrobe_items": 10, "outcome": "ok", "selected_item": "90s Track Jacket \u2014 Navy/White Stripe", "selected_price": 45.0, "outfit_attempts": 1, "fit_card_words": 48, "error": null, "duration_s": 3.387, "model_calls": 2, "prompt_tokens": 451, "output_tokens": 167, "cache_enabled": false, "fault": null}
+{"ts": "2026-11-10T08:08:44+00:00", "query": "silk slip dress in midi length under $40", "wardrobe_items": 10, "outcome": "ok", "selected_item": "90s Silk Slip Dress \u2014 Floral, Midi Length", "selected_price": 30.0, "outfit_attempts": 1, "fit_card_words": 56, "error": null, "duration_s": 7.648, "model_calls": 2, "prompt_tokens": 444, "output_tokens": 158, "cache_enabled": false, "fault": null}
+{"ts": "2026-11-10T08:08:52+00:00", "query": "platform sneakers size 8", "wardrobe_items": 10, "outcome": "ok", "selected_item": "Platform Sneakers \u2014 White Chunky Sole", "selected_price": 48.0, "outfit_attempts": 1, "fit_card_words": 39, "error": null, "duration_s": 7.871, "model_calls": 2, "prompt_tokens": 403, "output_tokens": 115, "cache_enabled": false, "fault": null}
+{"ts": "2026-11-10T08:08:54+00:00", "query": "denim jacket under $50", "wardrobe_items": 10, "outcome": "ok", "selected_item": "Denim Jacket \u2014 Light Wash, Cropped", "selected_price": 42.0, "outfit_attempts": 1, "fit_card_words": 42, "error": null, "duration_s": 2.263, "model_calls": 2, "prompt_tokens": 419, "output_tokens": 134, "cache_enabled": false, "fault": null}
+{"ts": "2026-11-10T08:09:05+00:00", "query": "vintage graphic tee under $30", "wardrobe_items": 10, "outcome": "ok", "selected_item": "Y2K Baby Tee \u2014 Butterfly Print", "selected_price": 18.0, "outfit_attempts": 1, "fit_card_words": 54, "error": null, "duration_s": 10.834, "model_calls": 2, "prompt_tokens": 425, "output_tokens": 148, "cache_enabled": false, "fault": null}
+{"ts": "2026-11-10T08:09:08+00:00", "query": "90s track jacket in size M", "wardrobe_items": 10, "outcome": "ok", "selected_item": "90s Track Jacket \u2014 Navy/White Stripe", "selected_price": 45.0, "outfit_attempts": 1, "fit_card_words": 51, "error": null, "duration_s": 3.687, "model_calls": 2, "prompt_tokens": 429, "output_tokens": 149, "cache_enabled": false, "fault": null}
+{"ts": "2026-11-10T08:09:26+00:00", "query": "silk slip dress in midi length under $40", "wardrobe_items": 10, "outcome": "ok", "selected_item": "90s Silk Slip Dress \u2014 Floral, Midi Length", "selected_price": 30.0, "outfit_attempts": 1, "fit_card_words": 47, "error": null, "duration_s": 17.994, "model_calls": 2, "prompt_tokens": 430, "output_tokens": 139, "cache_enabled": false, "fault": null}
+{"ts": "2026-11-10T08:09:38+00:00", "query": "platform sneakers size 8", "wardrobe_items": 10, "outcome": "ok", "selected_item": "Platform Sneakers \u2014 White Chunky Sole", "selected_price": 48.0, "outfit_attempts": 1, "fit_card_words": 38, "error": null, "duration_s": 11.462, "model_calls": 2, "prompt_tokens": 427, "output_tokens": 133, "cache_enabled": false, "fault": null}
+{"ts": "2026-11-10T08:09:47+00:00", "query": "denim jacket under $50", "wardrobe_items": 10, "outcome": "ok", "selected_item": "Denim Jacket \u2014 Light Wash, Cropped", "selected_price": 42.0, "outfit_attempts": 1, "fit_card_words": 54, "error": null, "duration_s": 8.988, "model_calls": 2, "prompt_tokens": 453, "output_tokens": 185, "cache_enabled": false, "fault": null}
+
+
+## What It Costs
+
+Measured with `python measure_cost.py`: cache off, the agent run until 10 runs
+succeeded (10 of 10 did), then token counts averaged from those 10 log records.
+Token counts come from the service's own `usage_metadata`, not estimates.
+
+| Measure | Average per run |
+|---|---|
+| model calls | 2.00 |
+| prompt tokens | 433.1 |
+| output tokens | 148.5 |
+| wall time | 8.33 s (includes two rate-limit pauses) |
+
+Price used: gemini-3.5-flash-lite at $0.30 per 1M input tokens and $2.50 per 1M
+output tokens.
+
+Cost per run = 433.1 × $0.30/1M + 148.5 × $2.50/1M = $0.000130 + $0.000371 = **$0.000501**
+
+100 people a day, one run each: 100 × $0.000501 = **$0.050 per day**, about $1.50 per month.
+At that volume the real limit is not money but the per-minute rate limit: 2 calls per
+run against 15 requests per minute means about 7 runs per minute before people queue.
