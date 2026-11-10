@@ -1,0 +1,99 @@
+
+=== trial 1 of 3 ===
+           vintage graphic tee under $30            -> ok (12.0s)
+           90s track jacket in size M               -> ok (29.8s)
+           silk slip dress in midi length under $40 -> ok (8.2s)
+           platform sneakers size 8                 -> ok (7.3s)
+           denim jacket under $50                   -> ok (5.4s)
+  [flaky]  vintage graphic tee under $30            -> ok (6.4s)
+  [flaky]  90s track jacket in size M               -> ok (12.3s)
+  [flaky]  silk slip dress in midi length under $40 -> ok (8.2s)
+  [flaky]  platform sneakers size 8                 -> crash (6.4s)
+  [rate limit] 15 requests used this minute. Waiting 2s. This is normal.
+  [flaky]  denim jacket under $50                   -> ok (14.3s)
+  [down]   vintage graphic tee under $30            -> model_error (1.8s)
+  [down]   90s track jacket in size M               -> model_error (1.5s)
+  [down]   silk slip dress in midi length under $40 -> model_error (1.5s)
+  [down]   platform sneakers size 8                 -> model_error (1.5s)
+  [down]   denim jacket under $50                   -> model_error (1.5s)
+           vintage graphic tee under $30            -> ok (15.8s)
+           90s track jacket in size M               -> ok (2.5s)
+           silk slip dress in midi length under $40 -> ok (2.7s)
+           designer ballgown size XXS under $5      -> no_results (0.5s)
+           designer ballgown size XXS under $5      -> no_results (0.5s)
+  [down]   platform sneakers size 8                 -> model_error (1.6s)
+  [down]   denim jacket under $50                   -> model_error (1.5s)
+  scores: {'C1': 4, 'C2': 5, 'C3': 7, 'C4': 3, 'C5': 5}
+
+=== trial 2 of 3 ===
+           vintage graphic tee under $30            -> ok (11.5s)
+           90s track jacket in size M               -> ok (5.8s)
+           silk slip dress in midi length under $40 -> ok (8.4s)
+           platform sneakers size 8                 -> ok (3.1s)
+  [rate limit] 15 requests used this minute. Waiting 6s. This is normal.
+  [rate limit] 15 requests used this minute. Waiting 2s. This is normal.
+           denim jacket under $50                   -> ok (14.5s)
+  [flaky]  vintage graphic tee under $30            -> ok (12.6s)
+  [flaky]  90s track jacket in size M               -> ok (8.5s)
+  [flaky]  silk slip dress in midi length under $40 -> ok (7.3s)
+  [flaky]  platform sneakers size 8                 -> ok (9.2s)
+  [flaky]  denim jacket under $50                   -> ok (8.7s)
+  [down]   vintage graphic tee under $30            -> model_error (1.5s)
+  [down]   90s track jacket in size M               -> model_error (1.5s)
+  [down]   silk slip dress in midi length under $40 -> model_error (1.5s)
+  [down]   platform sneakers size 8                 -> model_error (1.4s)
+  [down]   denim jacket under $50                   -> model_error (1.6s)
+           vintage graphic tee under $30            -> ok (5.2s)
+           90s track jacket in size M               -> ok (6.3s)
+           silk slip dress in midi length under $40 -> ok (9.7s)
+           designer ballgown size XXS under $5      -> no_results (0.5s)
+           designer ballgown size XXS under $5      -> no_results (0.4s)
+  [down]   platform sneakers size 8                 -> model_error (1.4s)
+  [down]   denim jacket under $50                   -> model_error (1.5s)
+  scores: {'C1': 5, 'C2': 5, 'C3': 7, 'C4': 3, 'C5': 5}
+
+=== trial 3 of 3 ===
+           vintage graphic tee under $30            -> ok (4.4s)
+           90s track jacket in size M               -> ok (12.8s)
+           silk slip dress in midi length under $40 -> ok (7.5s)
+           platform sneakers size 8                 -> ok (2.4s)
+  [rate limit] 15 requests used this minute. Waiting 4s. This is normal.
+           denim jacket under $50                   -> ok (9.5s)
+  [flaky]  vintage graphic tee under $30            -> ok (7.7s)
+  [flaky]  90s track jacket in size M               -> ok (13.6s)
+  [flaky]  silk slip dress in midi length under $40 -> ok (9.2s)
+  [flaky]  platform sneakers size 8                 -> ok (21.6s)
+  [flaky]  denim jacket under $50                   -> ok (11.8s)
+  [down]   vintage graphic tee under $30            -> model_error (1.6s)
+  [down]   90s track jacket in size M               -> model_error (1.6s)
+  [down]   silk slip dress in midi length under $40 -> model_error (1.6s)
+  [down]   platform sneakers size 8                 -> model_error (1.5s)
+  [down]   denim jacket under $50                   -> model_error (1.4s)
+           vintage graphic tee under $30            -> ok (15.7s)
+           90s track jacket in size M               -> ok (9.7s)
+           silk slip dress in midi length under $40 -> ok (12.0s)
+           designer ballgown size XXS under $5      -> no_results (1.0s)
+           designer ballgown size XXS under $5      -> no_results (0.4s)
+  [down]   platform sneakers size 8                 -> model_error (1.4s)
+  [down]   denim jacket under $50                   -> model_error (1.4s)
+  scores: {'C1': 5, 'C2': 5, 'C3': 7, 'C4': 4, 'C5': 5}
+
+## Run Log — before
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| C1. Flaky model call is recovered (attempts=2, fit card) | 5 of 5 | 4/5 | 5/5 | 5/5 | MISSED |
+| C2. Model down: clean stop, names item+price, <5s | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| C3. One truthful log line per run | 7 of 7 | 7/7 | 7/7 | 7/7 | MET |
+| C4. Normal runs finish OK in <10s | >= 4 of 5 | 3/5 | 3/5 | 4/5 | MISSED |
+| C5. Original happy path still ends ok | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+
+Failing runs:
+  C4 t1 [-] vintage graphic tee under $30: actual=ok attempts=1 wall=11.957s err=None
+  C4 t1 [-] 90s track jacket in size M: actual=ok attempts=2 wall=29.804s err=None
+  C1 t1 [flaky] platform sneakers size 8: actual=crash attempts=0 wall=6.372s err=ModelUnavailable: Couldn't reach the model: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is
+  C4 t2 [-] vintage graphic tee under $30: actual=ok attempts=1 wall=11.456s err=None
+  C4 t2 [-] denim jacket under $50: actual=ok attempts=1 wall=14.539s err=None
+  C4 t3 [-] 90s track jacket in size M: actual=ok attempts=1 wall=12.801s err=None
+
+saved results/capstone_before.json
