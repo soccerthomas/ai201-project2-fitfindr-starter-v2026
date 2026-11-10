@@ -44,6 +44,13 @@ _output_tokens = 0
 _client = None
 _budget_warned = False
 
+# Capstone (unit 9): hard ceiling on one model request, in milliseconds.
+MODEL_TIMEOUT_MS = int(os.getenv("FITFINDR_TIMEOUT_MS", "20000"))
+
+# Capstone fault injection. FITFINDR_FAULT=flaky fails the first real model
+# call of a run; FITFINDR_FAULT=down fails every one. Unset = normal.
+_fault_calls = 0
+
 
 class QuotaGuard(Exception):
     """Raised when a session blows through its request budget."""
@@ -253,8 +260,24 @@ def _get_client():
                 "Copy .env.example to .env and paste your key in, then try "
                 "again. `python test.py` will confirm it's working."
             )
-        _client = genai.Client(api_key=key)
+        _client = genai.Client(api_key=key, http_options={"timeout": MODEL_TIMEOUT_MS})
     return _client
+
+
+def _maybe_inject_fault() -> None:
+    """Simulate a model timeout on purpose, to test the bad path."""
+    global _fault_calls
+    mode = os.getenv("FITFINDR_FAULT", "").strip().lower()
+    if not mode:
+        return
+    _fault_calls += 1
+    if mode == "down" or (mode == "flaky" and _fault_calls == 1):
+        raise TimeoutError(f"simulated timeout (FITFINDR_FAULT={mode})")
+
+
+def reset_fault() -> None:
+    global _fault_calls
+    _fault_calls = 0
 
 
 def generate(
@@ -299,6 +322,7 @@ def generate(
     for attempt in range(config.MAX_RETRIES):
         _wait_for_slot()
         try:
+            _maybe_inject_fault()
             client = _get_client()
             _call_times.append(time.monotonic())
             _session_calls += 1
