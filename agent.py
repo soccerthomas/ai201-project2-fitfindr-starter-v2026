@@ -32,6 +32,8 @@ import generate as _gen
 # Capstone (unit 9): retry the suggest_outfit model call once, then stop cleanly.
 OUTFIT_MAX_ATTEMPTS = 2
 OUTFIT_RETRY_WAIT_S = 1.0
+# Capstone M6 improvement: same treatment for create_fit_card.
+FIT_CARD_MAX_ATTEMPTS = 2
 LOG_PATH = Path(__file__).parent / "logs" / "runs.jsonl"
 
 
@@ -152,7 +154,26 @@ def _run_agent_core(query: str, wardrobe: dict) -> dict:
     count += 1
     trace.check_iterations(count)
 
-    session["fit_card"] = create_fit_card(session["outfit_suggestion"], session["selected_item"])
+    card = None
+    for attempt in range(1, FIT_CARD_MAX_ATTEMPTS + 1):
+        session["fit_card_attempts"] = attempt
+        try:
+            card = create_fit_card(session["outfit_suggestion"], session["selected_item"])
+            break
+        except ModelUnavailable:
+            if attempt < FIT_CARD_MAX_ATTEMPTS:
+                time.sleep(OUTFIT_RETRY_WAIT_S)
+
+    if card is None:
+        # Model failed twice: build a plain card from data we already have, rather than crash.
+        item = session["selected_item"]
+        session["fit_card_fallback"] = True
+        card = (
+            f"{item['title']} — ${item['price']:.0f} on {item['platform']}. "
+            f"{session['outfit_suggestion']}"
+        )
+
+    session["fit_card"] = card
 
     return session
 
@@ -198,6 +219,8 @@ def _log_run(query, wardrobe, session, crash, start, calls_before, tokens_before
         "selected_price": item.get("price"),
         "outfit_attempts": s.get("outfit_attempts", 0),
         "fit_card_words": len(fit_card.split()),
+        "fit_card_attempts": s.get("fit_card_attempts", 0),
+        "fit_card_fallback": bool(s.get("fit_card_fallback")),
         "error": error,
         "duration_s": round(time.perf_counter() - start, 3),
         "model_calls": _gen.call_count() - calls_before,
