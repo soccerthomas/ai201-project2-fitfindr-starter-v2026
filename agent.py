@@ -21,6 +21,19 @@ from mcp_client import call_tool
 from tools import suggest_outfit, create_fit_card
 from generate import ModelUnavailable
 
+import datetime
+import json
+import os
+import time
+from pathlib import Path
+
+import generate as _gen
+
+# Capstone (unit 9): retry the suggest_outfit model call once, then stop cleanly.
+OUTFIT_MAX_ATTEMPTS = 2
+OUTFIT_RETRY_WAIT_S = 1.0
+LOG_PATH = Path(__file__).parent / "logs" / "runs.jsonl"
+
 
 # ── query parsing ──────────────────────────────────────────────────────────────
 
@@ -79,7 +92,7 @@ def new_session(query: str, wardrobe: dict) -> dict:
 
 # ── planning loop ─────────────────────────────────────────────────────────────
 
-def run_agent(query: str, wardrobe: dict) -> dict:
+def _run_agent_core(query: str, wardrobe: dict) -> dict:
     """
     Run the loop once and return the finished session.
 
@@ -114,7 +127,27 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     count += 1
     trace.check_iterations(count)
 
-    session["outfit_suggestion"] = suggest_outfit(session["selected_item"], wardrobe)
+    outfit, last_error = None, None
+    for attempt in range(1, OUTFIT_MAX_ATTEMPTS + 1):
+        session["outfit_attempts"] = attempt
+        try:
+            outfit = suggest_outfit(session["selected_item"], wardrobe)
+            break
+        except ModelUnavailable as exc:
+            last_error = exc
+            if attempt < OUTFIT_MAX_ATTEMPTS:
+                time.sleep(OUTFIT_RETRY_WAIT_S)
+
+    if outfit is None:
+        item = session["selected_item"]
+        session["error"] = (
+            f"Found {item['title']} (${item['price']} on {item['platform']}), "
+            f"but couldn't get an outfit suggestion after {OUTFIT_MAX_ATTEMPTS} tries. "
+            f"{last_error}"
+        )
+        return session
+
+    session["outfit_suggestion"] = outfit
 
     count += 1
     trace.check_iterations(count)
@@ -125,6 +158,61 @@ def run_agent(query: str, wardrobe: dict) -> dict:
 
 
 # ── running it directly ───────────────────────────────────────────────────────
+
+def run_agent(query: str, wardrobe: dict) -> dict:
+    """Run the loop once, and append one structured record to logs/runs.jsonl."""
+    start = time.perf_counter()
+    calls_before = _gen.call_count()
+    tokens_before = _gen.token_counts()
+    session, crash = None, None
+    try:
+        session = _run_agent_core(query, wardrobe)
+        return session
+    except Exception as exc:
+        crash = f"{type(exc).__name__}: {exc}"
+        raise
+    finally:
+        _log_run(query, wardrobe, session, crash, start, calls_before, tokens_before)
+
+
+def _log_run(query, wardrobe, session, crash, start, calls_before, tokens_before):
+    tokens_after = _gen.token_counts()
+    s = session or {}
+    item = s.get("selected_item") or {}
+    fit_card = s.get("fit_card") or ""
+    error = crash or s.get("error")
+    if crash:
+        outcome = "crash"
+    elif error and not item:
+        outcome = "no_results"
+    elif error:
+        outcome = "model_error"
+    else:
+        outcome = "ok"
+    record = {
+        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+        "query": query,
+        "wardrobe_items": len((wardrobe or {}).get("items", [])),
+        "outcome": outcome,
+        "selected_item": item.get("title"),
+        "selected_price": item.get("price"),
+        "outfit_attempts": s.get("outfit_attempts", 0),
+        "fit_card_words": len(fit_card.split()),
+        "error": error,
+        "duration_s": round(time.perf_counter() - start, 3),
+        "model_calls": _gen.call_count() - calls_before,
+        "prompt_tokens": tokens_after["prompt"] - tokens_before["prompt"],
+        "output_tokens": tokens_after["output"] - tokens_before["output"],
+        "cache_enabled": bool(config.CACHE_ENABLED),
+        "fault": os.getenv("FITFINDR_FAULT") or None,
+    }
+    try:
+        LOG_PATH.parent.mkdir(exist_ok=True)
+        with LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+    except OSError:
+        pass  # logging must never break a run
+
 
 def _show(session: dict) -> None:
     if session["error"]:
