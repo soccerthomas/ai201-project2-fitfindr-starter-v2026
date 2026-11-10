@@ -429,3 +429,135 @@ Cost per run = 433.1 × $0.30/1M + 148.5 × $2.50/1M = $0.000130 + $0.000371 = *
 100 people a day, one run each: 100 × $0.000501 = **$0.050 per day**, about $1.50 per month.
 At that volume the real limit is not money but the per-minute rate limit: 2 calls per
 run against 15 requests per minute means about 7 runs per minute before people queue.
+
+
+## Run Log and Verdicts
+
+Three trials, each one full run of `python capstone_trials.py --label before`, cache off.
+Raw output: `results/capstone_before.txt` and `results/capstone_before.json`.
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| C1. Flaky model call is recovered | 5 of 5 | 4/5 | 5/5 | 5/5 | MISSED |
+| C2. Model down: clean stop, names item and price, under 5 s | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| C3. One truthful log line per run | 7 of 7 | 7/7 | 7/7 | 7/7 | MET |
+| C4. Normal runs finish ok in under 10 s | at least 4 of 5 | 3/5 | 3/5 | 4/5 | MISSED |
+| C5. Original happy path still ends ok | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+
+Real output, one log line per criterion. Each record is written by `agent.py::_log_run`
+and scored by `capstone_trials.py::main`:
+
+C1 (FAILED, trial 1, 'platform sneakers size 8', fault=flaky):
+{"ts": "2026-11-10T08:16:55+00:00", "query": "platform sneakers size 8", "wardrobe_items": 10, "outcome": "crash", "selected_item": null, "selected_price": null, "outfit_attempts": 0, "fit_card_words": 0, "error": "ModelUnavailable: Couldn't reach the model: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}", "duration_s": 6.372, "model_calls": 2, "prompt_tokens": 226, "output_tokens": 77, "cache_enabled": false, "fault": "flaky"}
+
+C2 (passed, trial 1, 'vintage graphic tee under $30', fault=down):
+{"ts": "2026-11-10T08:17:11+00:00", "query": "vintage graphic tee under $30", "wardrobe_items": 10, "outcome": "model_error", "selected_item": "Y2K Baby Tee \u2014 Butterfly Print", "selected_price": 18.0, "outfit_attempts": 2, "fit_card_words": 0, "error": "Found Y2K Baby Tee \u2014 Butterfly Print ($18.0 on depop), but couldn't get an outfit suggestion after 2 tries. Couldn't reach the model. Check your internet connection and try again.", "duration_s": 1.793, "model_calls": 0, "prompt_tokens": 0, "output_tokens": 0, "cache_enabled": false, "fault": "down"}
+
+C3 (passed, trial 1, 'vintage graphic tee under $30', fault=None):
+{"ts": "2026-11-10T08:17:33+00:00", "query": "vintage graphic tee under $30", "wardrobe_items": 10, "outcome": "ok", "selected_item": "Y2K Baby Tee \u2014 Butterfly Print", "selected_price": 18.0, "outfit_attempts": 2, "fit_card_words": 48, "error": null, "duration_s": 15.757, "model_calls": 3, "prompt_tokens": 423, "output_tokens": 144, "cache_enabled": false, "fault": null}
+
+C4 (FAILED, trial 1, 'vintage graphic tee under $30', fault=None):
+{"ts": "2026-11-10T08:15:31+00:00", "query": "vintage graphic tee under $30", "wardrobe_items": 10, "outcome": "ok", "selected_item": "Y2K Baby Tee \u2014 Butterfly Print", "selected_price": 18.0, "outfit_attempts": 1, "fit_card_words": 48, "error": null, "duration_s": 11.953, "model_calls": 2, "prompt_tokens": 405, "output_tokens": 125, "cache_enabled": false, "fault": null}
+
+C5 (passed, trial 1, 'vintage graphic tee under $30', fault=None):
+{"ts": "2026-11-10T08:15:31+00:00", "query": "vintage graphic tee under $30", "wardrobe_items": 10, "outcome": "ok", "selected_item": "Y2K Baby Tee \u2014 Butterfly Print", "selected_price": 18.0, "outfit_attempts": 1, "fit_card_words": 48, "error": null, "duration_s": 11.953, "model_calls": 2, "prompt_tokens": 405, "output_tokens": 125, "cache_enabled": false, "fault": null}
+
+
+**C1: MISSED (4/5, 5/5, 5/5).** Stage: `create_fit_card`. In trial 1 the flaky
+"platform sneakers" run recovered the simulated fault in `suggest_outfit` as designed.
+The next model call, `create_fit_card`, then got a real `503 UNAVAILABLE` ("model is
+currently experiencing high demand"). That call had no retry, because it was out of scope,
+so `ModelUnavailable` escaped `run_agent` and the run crashed. The log recorded it as
+`outcome: crash`. The retry worked; the miss came from the unhardened call after it.
+
+**C2: MET (5/5 ×3).** Every down-mode run stopped with the item's title and price in
+the message, `outfit_attempts: 2`, in 1.4 to 2.2 s.
+
+**C3: MET (7/7 ×3).** Every run left exactly one log line and every `outcome` matched
+what the caller got, including `no_results` and `model_error`.
+
+**C4: MISSED (3/5, 3/5, 4/5).** Stage: the two model calls, not search or MCP. Down-mode
+runs skip the model and take about 1.5 s, so search plus MCP startup is about 1.5 s and
+everything above that is model time. Most slow runs (11 to 15 s) had no printed
+rate-limit wait. The 503 traceback shows the google-genai SDK retrying internally
+(`tenacity`), so when the service is under load the SDK waits silently inside one call.
+One slow run (29.8 s, "90s track jacket", trial 1) had `outfit_attempts: 2` with no
+fault switch set: a real failure that the 20 s timeout cut off and the retry recovered.
+My criterion assumed slowness would come from my own printed rate limiter. It mostly
+came from the service.
+
+**C5: MET (5/5 ×3).** The happy path still ends `ok`.
+
+**Pattern:** both misses trace to one stage, the model service under load. When it
+errors, an unhardened call crashes the run (C1). When it's slow, runs cross 10 s (C4).
+Before the fix, 3 normal run(s) with no fault switch set needed the
+`suggest_outfit` retry; after, 0. The extension caught real failures,
+not only simulated ones.
+
+## The Improvement
+
+**What I changed:** gave `create_fit_card` the same treatment as `suggest_outfit`. It
+gets one retry, and if both attempts fail the agent builds a plain fit card from data it
+already has (title, price, platform and the outfit text) instead of crashing. Two new log
+fields record it: `fit_card_attempts` and `fit_card_fallback`.
+
+**Why this one:** the C1 diagnosis named the exact mechanism, an unretried model call
+after the retried one, and this closes it. It does not target C4.
+
+Run Log, after (`python capstone_trials.py --label after`):
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| C1. Flaky model call is recovered | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| C2. Model down: clean stop, names item and price, under 5 s | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| C3. One truthful log line per run | 7 of 7 | 7/7 | 7/7 | 7/7 | MET |
+| C4. Normal runs finish ok in under 10 s | at least 4 of 5 | 4/5 | 4/5 | 3/5 | MISSED |
+| C5. Original happy path still ends ok | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+
+C1 (passed, trial 1, 'vintage graphic tee under $30', fault=flaky):
+{"ts": "2026-11-10T19:58:24+00:00", "query": "vintage graphic tee under $30", "wardrobe_items": 10, "outcome": "ok", "selected_item": "Y2K Baby Tee \u2014 Butterfly Print", "selected_price": 18.0, "outfit_attempts": 2, "fit_card_words": 56, "fit_card_attempts": 1, "fit_card_fallback": false, "error": null, "duration_s": 15.767, "model_calls": 2, "prompt_tokens": 444, "output_tokens": 173, "cache_enabled": false, "fault": "flaky"}
+
+C4 (FAILED, trial 1, 'vintage graphic tee under $30', fault=None):
+{"ts": "2026-11-10T19:57:56+00:00", "query": "vintage graphic tee under $30", "wardrobe_items": 10, "outcome": "ok", "selected_item": "Y2K Baby Tee \u2014 Butterfly Print", "selected_price": 18.0, "outfit_attempts": 1, "fit_card_words": 51, "fit_card_attempts": 1, "fit_card_fallback": false, "error": null, "duration_s": 10.033, "model_calls": 2, "prompt_tokens": 428, "output_tokens": 154, "cache_enabled": false, "fault": null}
+
+
+**Did it help?** For C1, yes: it went from 4/5, 5/5, 5/5 to 5/5 ×3. In the after set, 1 logged run(s) needed a second `create_fit_card` attempt and 0 used the fallback card; all of them still ended `ok`. The forced-failure test (create_fit_card replaced with one that always raises) also returned a fallback card instead of a crash.
+
+C2, C3 and C5 held. C4 is still MISSED (4/5, 4/5, 3/5), and the slow runs moved
+mechanism. Three of the four after-set misses (10.2 to 12.6 s) ran straight after a
+printed rate-limit wait of 6 to 7 s. The trial runner issues about 26 real calls in
+roughly 2 minutes against a 15 requests/minute cap, so the test's own load pushes
+limiter waits into the runs it measures. The fix didn't cause that, but it didn't help
+it either.
+
+## What's Still Broken
+
+**C4 is still missed.** What I'd do: log time per stage (each model call, and seconds
+spent waiting on the rate limiter) so one run splits into "my pacing" and "Google's
+latency". Then I'd know whether to space test runs to a real user's rate or to cut
+calls per run. Why I stopped: the unit allows one measured improvement. C4 needs a
+measurement before a fix, and guessing at it would be the "four changes you can't tell
+apart" the brief warns against. I am not changing the 10 s target. The runs came out
+slower, which is a result, not a broken criterion.
+
+**Also not handled (out of scope, still true):** transient and permanent errors get the
+same retry, so a bad API key wastes one retry and about 1 s before failing.
+
+**The one thing I'd do first with another unit:** per-stage timing in the log, because
+every remaining miss is a latency question I can't answer from total `duration_s` alone.
+
+## How I Used AI
+
+1. **Finding the gap.** I had Claude read `generate.py` and `agent.py`. It pointed out
+   that `ModelUnavailable` is raised immediately for anything that isn't a rate limit,
+   and that `run_agent` never catches it, so one bad response ends the whole run. That
+   became the extension. I kept the scope to one tool call, not all of `generate.py`.
+2. **Reading the 503.** Claude noticed `tenacity` in the 503 traceback, which means the
+   SDK retries internally. That changed my C4 diagnosis from "my rate limiter is slow"
+   to "service latency is hidden inside single calls". The first cost script it wrote
+   crashed on that same 503. I had it rewritten to keep going and to measure only
+   successful runs, and the crash became evidence in the log instead of lost data.
+
+Staff note: this capstone was built as TF prep, and its criteria were drafted with
+Claude. In a student submission the criteria would have to be the student's own, per
+the brief.
